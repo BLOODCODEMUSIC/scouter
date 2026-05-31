@@ -1,0 +1,291 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=600, height=600, initial-scale=1.0, user-scalable=no" />
+<title>Scouter</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Orbitron:wght@500;700;900&family=Share+Tech+Mono&display=swap" rel="stylesheet">
+<style>
+  /* color is driven by --hud, set per scouter theme on <body data-scouter> */
+  body[data-scouter="green"] { --hud:#2bff5a; --glowrgb:43,255,90; }
+  body[data-scouter="blue"]  { --hud:#37c4ff; --glowrgb:55,196,255; }
+  body[data-scouter="red"]   { --hud:#ff4d4d; --glowrgb:255,77,77; }
+  :root{ --hud:#2bff5a; --glowrgb:43,255,90; }
+
+  *{box-sizing:border-box;-webkit-tap-highlight-color:transparent;user-select:none;margin:0;}
+  html,body{width:600px;height:600px;overflow:hidden;background:#000;}
+  body{font-family:"Share Tech Mono",ui-monospace,monospace;color:var(--hud);
+    display:flex;align-items:center;justify-content:center;position:relative;}
+
+  /* faint scanline / lens tint over everything */
+  .lensfx{position:absolute;inset:0;pointer-events:none;z-index:5;
+    background:repeating-linear-gradient(0deg, rgba(var(--glowrgb),.05) 0 1px, transparent 1px 3px);}
+
+  .stage{width:600px;height:600px;position:relative;}
+
+  /* ===== reticle / crosshair ===== */
+  .reticle{position:absolute;inset:0;}
+  .ring{position:absolute;border:2px solid rgba(var(--glowrgb),.5);border-radius:50%;
+    left:50%;top:50%;transform:translate(-50%,-50%);}
+  .ring.r1{width:300px;height:300px;}
+  .ring.r2{width:200px;height:200px;border-style:dashed;opacity:.6;
+    animation:spin 14s linear infinite;}
+  .ring.r3{width:120px;height:120px;border-color:var(--hud);
+    box-shadow:0 0 18px rgba(var(--glowrgb),.6), inset 0 0 18px rgba(var(--glowrgb),.3);}
+  @keyframes spin{to{transform:translate(-50%,-50%) rotate(360deg);}}
+  /* crosshair ticks */
+  .tick{position:absolute;background:var(--hud);box-shadow:0 0 8px rgba(var(--glowrgb),.7);}
+  .tick.h{width:60px;height:2px;top:50%;left:50%;transform:translate(-50%,-50%);}
+  .tick.v{width:2px;height:60px;top:50%;left:50%;transform:translate(-50%,-50%);}
+  .corner{position:absolute;width:26px;height:26px;border:2px solid var(--hud);opacity:.8;}
+  .corner.tl{top:60px;left:60px;border-right:none;border-bottom:none;}
+  .corner.tr{top:60px;right:60px;border-left:none;border-bottom:none;}
+  .corner.bl{bottom:60px;left:60px;border-right:none;border-top:none;}
+  .corner.br{bottom:60px;right:60px;border-left:none;border-top:none;}
+
+  /* target dot that drifts with head motion */
+  .target{position:absolute;width:16px;height:16px;border-radius:50%;background:var(--hud);
+    left:50%;top:50%;transform:translate(-50%,-50%);
+    box-shadow:0 0 14px rgba(var(--glowrgb),.9);transition:none;}
+
+  /* ===== power readout ===== */
+  .readout{position:absolute;left:50%;bottom:96px;transform:translateX(-50%);text-align:center;z-index:3;}
+  .plabel{font-family:"Orbitron",sans-serif;font-size:13px;letter-spacing:5px;opacity:.8;}
+  .pval{font-family:"Orbitron",sans-serif;font-weight:900;font-size:62px;line-height:1;
+    text-shadow:0 0 18px rgba(var(--glowrgb),.8);letter-spacing:1px;}
+  .status{position:absolute;left:50%;top:84px;transform:translateX(-50%);
+    font-family:"Orbitron",sans-serif;font-size:14px;letter-spacing:3px;opacity:.85;white-space:nowrap;}
+
+  /* readout for motion / scan state bars */
+  .bars{position:absolute;left:50%;bottom:70px;transform:translateX(-50%);display:flex;gap:4px;}
+  .bars i{width:14px;height:8px;background:rgba(var(--glowrgb),.25);border-radius:2px;}
+  .bars i.on{background:var(--hud);box-shadow:0 0 8px rgba(var(--glowrgb),.8);}
+
+  /* ===== activate prompt ===== */
+  .prompt{position:absolute;inset:0;z-index:10;display:flex;flex-direction:column;
+    align-items:center;justify-content:center;gap:16px;background:rgba(0,0,0,.55);text-align:center;}
+  .prompt.hidden{display:none;}
+  .prompt .big{font-family:"Orbitron",sans-serif;font-weight:900;font-size:30px;letter-spacing:3px;
+    text-shadow:0 0 16px rgba(var(--glowrgb),.8);}
+  .prompt .sub{font-size:14px;letter-spacing:2px;opacity:.8;}
+  .pulse{animation:pp 1.1s ease-in-out infinite;}
+  @keyframes pp{0%,100%{opacity:.55;}50%{opacity:1;}}
+
+  /* ===== OVER 9000 freakout ===== */
+  .over{position:absolute;inset:0;z-index:8;display:flex;align-items:center;justify-content:center;
+    opacity:0;pointer-events:none;}
+  .over.fire{animation:overshow 2.4s ease-out;}
+  .over .txt{font-family:"Orbitron",sans-serif;font-weight:900;font-size:46px;text-align:center;
+    color:#fff;text-shadow:0 0 24px var(--hud),0 0 40px rgba(var(--glowrgb),.9);line-height:1.05;
+    transform:scale(.6);}
+  .over.fire .txt{animation:overpop .5s cubic-bezier(.2,1.6,.4,1) forwards;}
+  @keyframes overshow{0%{opacity:0;}8%{opacity:1;}80%{opacity:1;}100%{opacity:0;}}
+  @keyframes overpop{to{transform:scale(1);}}
+  /* shake the whole stage during freakout */
+  .stage.shake{animation:shake .4s linear 3;}
+  @keyframes shake{0%,100%{transform:translate(0,0);}25%{transform:translate(-4px,2px);}
+    50%{transform:translate(3px,-3px);}75%{transform:translate(-2px,3px);}}
+  /* red alert flash */
+  .alert{position:absolute;inset:0;z-index:7;background:radial-gradient(circle, transparent 40%, rgba(var(--glowrgb),.25) 100%);
+    opacity:0;pointer-events:none;}
+  .alert.fire{animation:alertflash 2.4s ease-out;}
+  @keyframes alertflash{0%,100%{opacity:0;}10%{opacity:1;}50%{opacity:.4;}90%{opacity:.8;}}
+
+  /* ===== scouter color picker (bottom) ===== */
+  .picker{position:absolute;left:50%;bottom:20px;transform:translateX(-50%);
+    display:flex;gap:12px;z-index:4;}
+  .swatch{width:30px;height:30px;border-radius:50%;border:2px dashed rgba(255,255,255,.3);cursor:pointer;
+    transition:transform .12s, box-shadow .12s, border-color .12s;}
+  .swatch.green{background:#2bff5a;} .swatch.blue{background:#37c4ff;} .swatch.red{background:#ff4d4d;}
+  .swatch.focused{border-style:solid;border-color:#fff;box-shadow:0 0 14px #fff;transform:scale(1.15);}
+
+  .hint{position:absolute;left:50%;bottom:58px;transform:translateX(-50%);z-index:4;
+    font-size:11px;letter-spacing:1px;opacity:.6;white-space:nowrap;text-align:center;}
+</style>
+</head>
+<body data-scouter="green">
+  <div class="stage" id="stage">
+    <div class="reticle">
+      <div class="ring r1"></div>
+      <div class="ring r2"></div>
+      <div class="ring r3"></div>
+      <div class="tick h"></div>
+      <div class="tick v"></div>
+      <div class="corner tl"></div><div class="corner tr"></div>
+      <div class="corner bl"></div><div class="corner br"></div>
+      <div class="target" id="target"></div>
+    </div>
+
+    <div class="status" id="status">SCANNING…</div>
+
+    <div class="readout">
+      <div class="plabel">POWER LEVEL</div>
+      <div class="pval" id="pval">0</div>
+    </div>
+    <div class="bars" id="bars"></div>
+
+    <div class="alert" id="alert"></div>
+    <div class="over" id="over"><div class="txt">IT'S OVER<br>9000!!</div></div>
+
+    <div class="hint" id="hint">◄ ► scouter · ● scan</div>
+    <div class="picker" id="picker">
+      <div class="swatch green" data-c="green"></div>
+      <div class="swatch blue" data-c="blue"></div>
+      <div class="swatch red" data-c="red"></div>
+    </div>
+
+    <div class="prompt pulse" id="prompt">
+      <div class="big">SCOUTER</div>
+      <div class="sub">PINCH ● TO ACTIVATE</div>
+    </div>
+  </div>
+
+<script>
+/* ===== state ===== */
+const SCOUTERS=["green","blue","red"];
+const state={ scouterIdx:0, active:false, power:0, target:0, motion:0, overCooldown:0 };
+const $=id=>document.getElementById(id);
+
+/* build the motion bars */
+const BARS=12;
+(function(){const w=$("bars");for(let i=0;i<BARS;i++){w.appendChild(document.createElement("i"));}})();
+
+function applyScouter(){ document.body.dataset.scouter=SCOUTERS[state.scouterIdx];
+  document.querySelectorAll(".swatch").forEach((s,i)=>s.classList.toggle("focused",i===state.scouterIdx)); }
+
+/* ===== IMU (real head motion) ===== */
+let lastA=null;
+function onOrient(e){
+  // use change in orientation as "motion energy"
+  const a=e.alpha||0, b=e.beta||0, g=e.gamma||0;
+  if(lastA){
+    const d=Math.abs(a-lastA.a)+Math.abs(b-lastA.b)+Math.abs(g-lastA.g);
+    state.motion = state.motion*0.8 + Math.min(d,40)*0.2;   // smoothed
+    // drift the target dot with tilt
+    const tx=Math.max(-120,Math.min(120,(g)*2));
+    const ty=Math.max(-90,Math.min(90,(b-10)*1.5));
+    $("target").style.transform=`translate(calc(-50% + ${tx}px), calc(-50% + ${ty}px))`;
+  }
+  lastA={a,b,g};
+}
+function onMotion(e){
+  const r=e.rotationRate||{};
+  const mag=(Math.abs(r.alpha||0)+Math.abs(r.beta||0)+Math.abs(r.gamma||0))/3;
+  state.motion = Math.max(state.motion, Math.min(mag/4,40));
+}
+function startIMU(){
+  window.addEventListener("deviceorientation",onOrient);
+  window.addEventListener("devicemotion",onMotion);
+}
+function requestIMU(){
+  // must be called from a user gesture
+  let need=(typeof DeviceOrientationEvent!=="undefined" && typeof DeviceOrientationEvent.requestPermission==="function");
+  if(need){
+    DeviceOrientationEvent.requestPermission().then(s=>{ if(s==="granted") startIMU(); }).catch(()=>{});
+    if(typeof DeviceMotionEvent!=="undefined" && typeof DeviceMotionEvent.requestPermission==="function"){
+      DeviceMotionEvent.requestPermission().catch(()=>{});
+    }
+  } else { startIMU(); }
+}
+
+/* ===== power level logic =====
+   Idle power tracks head motion (scanning the area).
+   A "scan" pinch locks a target and spins the number up dramatically. */
+function activate(){
+  if(state.active)return;
+  state.active=true;
+  $("prompt").classList.add("hidden");
+  requestIMU();
+  $("status").textContent="SCANNING…";
+}
+
+let scanning=false;
+function scan(){
+  if(!state.active){ activate(); return; }
+  if(scanning)return;
+  scanning=true;
+  $("status").textContent="LOCKING TARGET…";
+  // decide the target power: usually mortal, sometimes a monster, rare over-9000
+  const roll=Math.random();
+  let target;
+  if(roll>0.85 && state.overCooldown<=0){ target=9001 + Math.floor(Math.random()*8000); } // over 9000!
+  else if(roll>0.6){ target=1000 + Math.floor(Math.random()*7000); }
+  else { target=5 + Math.floor(Math.random()*900); }
+  state.target=target;
+
+  // spin up animation
+  const start=performance.now(), dur=1400, from=state.power;
+  (function spin(now){
+    const t=Math.min(1,(now-start)/dur);
+    const eased=1-Math.pow(1-t,3);
+    // jitter the climbing number for that frantic scouter feel
+    const base=from+(target-from)*eased;
+    const jit=t<1?(Math.random()*target*0.04):0;
+    state.power=Math.floor(base+jit);
+    renderPower();
+    if(t<1){requestAnimationFrame(spin);}
+    else{ state.power=target; renderPower(); finishScan(); }
+  })(start);
+}
+function finishScan(){
+  scanning=false;
+  if(state.target>9000){ triggerOver(); $("status").textContent="THREAT DETECTED"; }
+  else if(state.target>5000){ $("status").textContent="ELITE WARRIOR"; }
+  else if(state.target>1000){ $("status").textContent="STRONG TARGET"; }
+  else { $("status").textContent="TARGET: WEAK"; }
+  if(state.overCooldown>0)state.overCooldown--;
+}
+
+function triggerOver(){
+  state.overCooldown=3; // don't spam it
+  const over=$("over"), alert=$("alert"), stage=$("stage");
+  over.classList.remove("fire"); alert.classList.remove("fire"); stage.classList.remove("shake");
+  void over.offsetWidth; void alert.offsetWidth; void stage.offsetWidth;
+  over.classList.add("fire"); alert.classList.add("fire"); stage.classList.add("shake");
+}
+
+function fmt(n){ return n.toLocaleString("en-US"); }
+function renderPower(){ $("pval").textContent=fmt(state.power); }
+
+/* idle loop: when active and not scanning, power gently reflects head motion */
+function loop(){
+  if(state.active && !scanning){
+    // ambient reading scales with how much you're moving your head
+    const ambient = Math.floor(state.motion*30 + 5);
+    // ease current power toward ambient
+    state.power += (ambient-state.power)*0.15;
+    renderPower();
+    // motion bars
+    const lit=Math.round(Math.min(1,state.motion/30)*BARS);
+    document.querySelectorAll(".bars i").forEach((b,i)=>b.classList.toggle("on",i<lit));
+    // decay motion
+    state.motion*=0.96;
+  }
+  requestAnimationFrame(loop);
+}
+
+/* ===== input: D-pad + select ===== */
+function cycleScouter(dir){ state.scouterIdx=(state.scouterIdx+dir+SCOUTERS.length)%SCOUTERS.length; applyScouter(); }
+window.addEventListener("keydown",e=>{
+  switch(e.key){
+    case"ArrowLeft":  cycleScouter(-1); break;
+    case"ArrowRight": cycleScouter(1);  break;
+    case"ArrowUp": case"ArrowDown": break;
+    case"Enter": case" ": scan(); break;
+    default:return;
+  }
+  e.preventDefault();
+});
+/* taps for browser */
+document.querySelectorAll(".swatch").forEach((s,i)=>s.addEventListener("click",()=>{state.scouterIdx=i;applyScouter();}));
+$("prompt").addEventListener("click",activate);
+$("stage").addEventListener("click",e=>{ if(state.active && !e.target.classList.contains("swatch")) scan(); });
+
+applyScouter();
+renderPower();
+requestAnimationFrame(loop);
+</script>
+</body>
+</html>
